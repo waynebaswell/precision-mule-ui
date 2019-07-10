@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-96994646-1"></script>
+    <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'UA-96994646-1');
+    </script>
+
+    <title>Precision Mule</title>
+    <meta name="viewport" content="initial-scale=1.0">
+    <meta charset="utf-8">
+    <style>
+        #map {
+            height: 100%;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        #panel {
+            width: 200px;
+            font-family: Arial, sans-serif;
+            font-size: 13px;
+            float: right;
+            margin: 10px;
+        }
+        
+        #color-palette {
+            clear: both;
+        }
+
+        .color-button {
+            width: 14px;
+            height: 14px;
+            font-size: 0;
+            margin: 2px;
+            float: left;
+            cursor: pointer;
+        }
+
+        #deleteBtn {
+            margin-top: 5px;
+        }
+        #controls button, input{
+            margin-top:3px;
+            margin-bottom:3px;
+            width: 100%;
+        }
+
+        #controls input {
+            width: 194px;
+        }
+        .sub-controls {
+            border-bottom: 1px solid #e5e5e5;
+            padding-top: 13px;
+            padding-bottom: 13px;
+        }
+
+    </style>
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#5bbad5">
+    <meta name="msapplication-TileColor" content="#da532c">
+    <meta name="theme-color" content="#ffffff">
+</head>
+
+<body>
+    <div id="panel">
+        <div id="color-palette" style="display: none"></div>
+        <div id="controls">
+            <img src="logo-green.png" alt="Precision Mule" width="191px">
+            <div class="sub-controls input">
+            Mission Path Width (in Meters):<input type="text" name="pathWidth" id="pathWidth" value="0.5" required>
+            </div>
+            <div class="sub-controls actions">
+                <button id="buildMissionBtn">Build Mission</button>
+                <button id="downloadWaypointsBtn">Download Waypoint File</button>
+            </div>
+            <div class="sub-controls actions">
+                <button id="savePolygonBtn">Save Polygon</button>
+                <button id="loadPolygonBtn">Load Saved Polygon</button>
+            </div>
+            <div class="sub-controls actions">
+                <div>
+                    Import Polygon file:
+                    <input type="file" name="file" id="file">
+                </div>
+                <button id="downloadPolygonBtn">Download Polygon File</button>
+            </div>
+            <div class="sub-controls actions">
+                <button id="deleteBtn">Clear Map</button>
+            </div>
+        </div>
+    </div>
+    <div id="map"></div>
+    <script>
+        var map;
+        var drawingManager;
+        var selectedShape;
+        var colors = ['#1E90FF', '#FF1493', '#32CD32', '#FF8C00', '#4B0082'];
+        var selectedColor;
+        var colorButtons = {};
+        var polylines = [];
+        var missionPolygon;
+        var missionPathPolyline;
+        var polyOptions;
+        
+        //JSON local storage helper functions
+        //credit: https://stackoverflow.com/questions/2010892/storing-objects-in-html5-localstorage?rq=1
+        Storage.prototype.setObject = function (key, value)
+        {
+            this.setItem(key, JSON.stringify(value));
+        }
+
+        Storage.prototype.getObject = function (key)
+        {
+            var value = this.getItem(key);
+            return value && JSON.parse(value);
+        }
+
+        //document.getElementById shorthand
+        //credit: https://stackoverflow.com/questions/6398787/javascript-shorthand-for-getelementbyid
+        var $ = function( id ) { return document.getElementById( id ); };
+
+        function download(filename, text)
+        {
+            var element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+            element.setAttribute('download', filename);
+
+            element.style.display = 'none';
+            document.body.appendChild(element);
+
+            element.click();
+
+            document.body.removeChild(element);
+        }
+
+        function setupFileListener()
+        {
+            $('file').onchange = function ()
+            {
+                var file = this.files[0];
+
+                var reader = new FileReader();
+                reader.onload = function (progressEvent)
+                {
+                    // Entire file
+                    console.log(this.result);
+                    var missionPolygonlls = JSON.parse(this.result);
+                    loadPolygonfromllJSON(missionPolygonlls);
+                };
+                reader.readAsText(file);
+            };
+            
+            //This ensures the file will be imported in the event that
+            //the user is re-uploading a file of the same name of the
+            //file they just uploaded
+            //credit: https://stackoverflow.com/questions/12030686/html-input-file-selection-event-not-firing-upon-selecting-the-same-file
+            $('file').onclick = function () {
+                this.value = null;
+            };
+        }
+
+        setupFileListener();
+
+        //Credit: https://blog.thecell.eu/blog/2017/11/12/customlines-for-google-maps-polylines/
+        //https://developers.google.com/maps/documentation/javascript/reference?#IconSequence
+        let iconsequ = [];
+        
+        // SymbolPath https://developers.google.com/maps/documentation/javascript/reference?#SymbolPath
+        let redCircle = {
+            "path": "M -2,0 C -1.947018,-2.2209709 1.9520943,-2.1262691 2,0.00422057 2.0378955,1.3546185 1.5682108,2.0631345 1.4372396e-8,2.0560929 -1.7155482,2.0446854 -1.9145886,1.0142836 -2,0.06735507 Z",
+            "fillColor": "#ff0000",
+            "fillOpacity": 0.8,
+            "strokeColor": "#ff0000",
+            "strokeWeight": 20,
+            "scale": 0.5
+        };
+
+        let greenCircle = {
+            "path": "M -2,0 C -1.947018,-2.2209709 1.9520943,-2.1262691 2,0.00422057 2.0378955,1.3546185 1.5682108,2.0631345 1.4372396e-8,2.0560929 -1.7155482,2.0446854 -1.9145886,1.0142836 -2,0.06735507 Z",
+            "fillColor": "#ff0000",
+            "fillOpacity": 0.8,
+            "strokeColor": "#008000",
+            "strokeWeight": 20,
+            "scale": 0.5
+        };
+        
+        // add Point at the start of the Line
+        iconsequ.push(
+        {
+            icon: greenCircle,
+            offset: "0%",
+            repeat: "0"
+        });
+        
+        // add Point at the end of the Line
+        iconsequ.push(
+        {
+            icon: redCircle,
+            offset: "100%",
+            repeat: "0"
+        });
+ 
+        function initMap()
+        {
+            map = new google.maps.Map($('map'), {
+                center: { lat: 30.56, lng: -87.67 },
+                zoom: 2,
+                mapTypeId: 'hybrid',
+                tilt: 0,
+                labels: true
+            });
+            
+            setCustomZoom();
+            addDrawingToolsToMap();
+            loadMapLocationFromCookie();
+        }
+
+        //Increase the map zoom for fine-tuning mission location
+        //Credit: https://stackoverflow.com/questions/30136525/allow-further-zoom-on-google-maps-v3-satellite-view?rq=1
+        function setCustomZoom()
+        {
+            zoomRangeModifier = map.__proto__.__proto__.__proto__;
+            originalSetFunc = zoomRangeModifier.set;
+            hijackedSetFunc = function (a, b)
+            {
+                if (a === 'maxZoom')
+                {
+                    b = 25;
+                }
+                originalSetFunc.call(this, a, b);
+            };
+            zoomRangeModifier.set = hijackedSetFunc;
+        }
+
+        //Map karate credit to Ilya Radchenko: http://bl.ocks.org/knownasilya/89a32e572989f0aff1f8
+        function clearSelection()
+        {
+            if (selectedShape)
+            {
+                if (selectedShape.type !== 'marker')
+                {
+                    selectedShape.setEditable(false);
+                }
+
+                selectedShape = null;
+            }
+        }
+
+        function setSelection(shape)
+        {
+            if (shape.type !== 'marker')
+            {
+                clearSelection();
+                shape.setEditable(true);
+                selectColor(shape.get('fillColor') || shape.get('strokeColor'));
+            }
+
+            selectedShape = shape;
+        }
+
+        function deleteSelectedShape()
+        {
+            if (missionPolygon)
+            {
+                missionPolygon.setMap(null);
+                drawingManager.setOptions({
+                    drawingMode: google.maps.drawing.OverlayType.POLYGON,
+                    drawingControl: true
+                });
+                
+            }
+            if (missionPathPolyline != null) 
+            {
+                missionPathPolyline.setMap(null);
+            }
+
+        }
+
+        function savePolygon()
+        {
+            var lls = [];
+
+            var polygonBounds = missionPolygon.getPath();
+            // Iterate over the polygonBounds vertices.
+            polygonBounds.forEach(function (xy, i)
+            {
+                lls.push({ lat: xy.lat(), lng: xy.lng() });
+            })
+
+            localStorage.setObject('missionPolygonlls', lls);
+        }
+
+        function downloadPolygon()
+        {
+            var lls = [];
+            
+            if(missionPolygon)
+            {
+                var polygonBounds = missionPolygon.getPath();
+                // Iterate over the polygonBounds vertices.
+                polygonBounds.forEach(function (xy, i)
+                {
+                    lls.push({ lat: xy.lat(), lng: xy.lng() });
+                })
+                var llsAsJSONString = JSON.stringify(lls);
+
+                download("polygon.json", llsAsJSONString);
+            }
+        }
+
+        function loadSavedPolygon()
+        {
+            var missionPolygonlls = localStorage.getObject('missionPolygonlls');
+            loadPolygonfromllJSON(missionPolygonlls);
+        }
+
+        function loadPolygonfromllJSON(missionPolygonlls)
+        {
+            deleteSelectedShape();
+            var pathMVCArray =  new google.maps.MVCArray();
+            if(missionPolygonlls)
+            {
+                for (var i = 0; i < missionPolygonlls.length; i++)
+                {
+                    var obj = missionPolygonlls[i];
+                    pathMVCArray.push(new google.maps.LatLng(obj.lat, obj.lng));
+                }
+                missionPolygon = new google.maps.Polygon();
+                missionPolygon.setOptions(polyOptions);
+                missionPolygon.setPath(pathMVCArray);
+                missionPolygon.setMap(map);
+                drawingManager.setDrawingMode(null);
+                drawingManager.setOptions({
+                    drawingControl: false
+                });
+                map.setOptions({draggableCursor:''});
+                //addPolygonClickHandlers();
+                // Add an event listener that selects the newly-drawn shape when the user
+                // mouses down on it.
+                google.maps.event.addListener(missionPolygon, 'click',
+                    function (e) 
+                    {
+                        if (e.vertex !== undefined) 
+                        {
+                            var path = missionPolygon.getPaths().getAt(e.path);
+                            path.removeAt(e.vertex);
+                            if (path.length < 3) 
+                            {
+                                missionPolygon.setMap(null);
+                            }
+                        }
+                        setSelection(missionPolygon);
+                });
+                  
+            }
+        }
+
+        function selectColor(color) 
+        {
+            selectedColor = color;
+            for (var i = 0; i < colors.length; ++i) 
+            {
+                var currColor = colors[i];
+                colorButtons[currColor].style.border = currColor == color ? '2px solid #789' : '2px solid #fff';
+            }
+
+            // Retrieves the current options from the drawing manager and replaces the
+            // stroke or fill color as appropriate.
+            var polylineOptions = drawingManager.get('polylineOptions');
+            polylineOptions.strokeColor = color;
+            drawingManager.set('polylineOptions', polylineOptions);
+
+            var rectangleOptions = drawingManager.get('rectangleOptions');
+            rectangleOptions.fillColor = color;
+            drawingManager.set('rectangleOptions', rectangleOptions);
+
+            var circleOptions = drawingManager.get('circleOptions');
+            circleOptions.fillColor = color;
+            drawingManager.set('circleOptions', circleOptions);
+
+            var polygonOptions = drawingManager.get('polygonOptions');
+            polygonOptions.fillColor = color;
+            drawingManager.set('polygonOptions', polygonOptions);
+        }
+
+        function setSelectedShapeColor(color) 
+        {
+            if (selectedShape) 
+            {
+                if (selectedShape.type == google.maps.drawing.OverlayType.POLYLINE) 
+                {
+                    selectedShape.set('strokeColor', color);
+                }
+                else 
+                {
+                    selectedShape.set('fillColor', color);
+                }
+            }
+        }
+
+        function makeColorButton(color) 
+        {
+            var button = document.createElement('span');
+            button.className = 'color-button';
+            button.style.backgroundColor = color;
+            google.maps.event.addDomListener(button, 'click',
+                function () 
+                {
+                    selectColor(color);
+                    setSelectedShapeColor(color);
+                });
+            return button;
+        }
+
+        function buildColorPalette() 
+        {
+            var colorPalette = $('color-palette');
+            for (var i = 0; i < colors.length; ++i) 
+            {
+                var currColor = colors[i];
+                var colorButton = makeColorButton(currColor);
+                colorPalette.appendChild(colorButton);
+                colorButtons[currColor] = colorButton;
+            }
+            selectColor(colors[0]);
+        }
+
+        function round(value, decimals)
+        {
+            return Number(Math.round(value + 'e' + decimals) + 'e-' + decimals);
+        }
+
+        function postData(latLngData, mowingPathWidthInMeters)
+        {
+            fetch('http://precisionmule.com/missionbuilder/api/buildMissionFromLatLngPoints?mowingPathWidthInMeters='+mowingPathWidthInMeters, {
+                method: 'POST',
+                body: latLngData
+            }).then((res) => res.json())
+                .then((data) => addMissionPolylineToMap(data))
+                .catch((err) => console.log("Whupps we have an error: " + err))
+        }
+
+        function addMissionPolylineToMap(jsonData)
+        {
+            if (missionPathPolyline != null) 
+            {
+                missionPathPolyline.setMap(null);
+            }
+
+            for (var x = 0; x < jsonData.length; x++)
+            {
+                var latLng = jsonData[x];
+                console.log(`${x} Latitude: ${latLng.lat} Longitude: ${latLng.lng}`);
+            }
+            missionPathPolyline = new google.maps.Polyline({
+                path: jsonData,
+                geodesic: true,
+                strokeColor: '#008000',
+                strokeOpacity: 1.0,
+                strokeWeight: 2,
+                editable: true,
+                icons: iconsequ
+            });
+            missionPathPolyline.setMap(map);
+        }
+
+        function buildMissionWaypointString(waypointMVCArray)
+        {
+            var missionString = buildWaypointFileFirstLine() + "\n";
+
+            for(var x = 0; x < waypointMVCArray.getLength(); x++)
+            {
+                var lat = waypointMVCArray.getAt(x).lat();
+                var lng = waypointMVCArray.getAt(x).lng();
+
+                if(x == 0)
+                {
+                    //Add first line twice (i.e. to set first point as home)
+                    missionString += buildWaypointFileLatLngLine(x, lat, lng) + "\n";
+                }
+
+                missionString += buildWaypointFileLatLngLine(x+1, lat, lng) + "\n";
+            }
+
+            return missionString;
+        }
+
+        function buildWaypointFileFirstLine()
+        {
+            var header = "QGC WPL 110";
+            return header;
+        }
+
+        function buildWaypointFileLatLngLine(index, lat, lng)
+        {
+            return index + "\t0\t3\t16\t0\t0\t0\t0\t" + lat + "\t" + lng + "\t100.000000\t1";
+        }
+
+        function addPolygonClickHandlers()
+        {
+            google.maps.event.addListener(drawingManager, 'overlaycomplete',
+                function (e) 
+                {
+                    var newShape = e.overlay;
+
+                    newShape.type = e.type;
+
+                    if (e.type !== google.maps.drawing.OverlayType.MARKER) 
+                    {
+                        // Switch back to non-drawing mode after drawing a shape.
+                        drawingManager.setDrawingMode(null);
+
+                        // Add an event listener that selects the newly-drawn shape when the user
+                        // mouses down on it.
+                        google.maps.event.addListener(newShape, 'click',
+                            function (e) 
+                            {
+                                if (e.vertex !== undefined) 
+                                {
+                                    if (newShape.type === google.maps.drawing.OverlayType.POLYGON) 
+                                    {
+                                        var path = newShape.getPaths().getAt(e.path);
+                                        path.removeAt(e.vertex);
+                                        if (path.length < 3) 
+                                        {
+                                            newShape.setMap(null);
+                                        }
+                                    }
+                                    if (newShape.type === google.maps.drawing.OverlayType.POLYLINE) 
+                                    {
+                                        var path = newShape.getPath();
+                                        path.removeAt(e.vertex);
+                                        if (path.length < 2) 
+                                        {
+                                            newShape.setMap(null);
+                                        }
+                                    }
+                                }
+                                setSelection(newShape);
+                            });
+                        setSelection(newShape);
+                    }
+                    else 
+                    {
+                        google.maps.event.addListener(newShape, 'click',
+                            function (e) 
+                            {
+                                setSelection(newShape);
+                            });
+                        setSelection(newShape);
+                    }
+                }
+            );
+        }
+
+        //Add drawing tools (i.e. that user will use to draw mission) to map
+        function addDrawingToolsToMap() 
+        {
+            polyOptions =
+            {
+                strokeWeight: 0,
+                fillOpacity: 0.45,
+                editable: true,
+                draggable: true,
+                fillColor: '#ff0000'
+            };
+            // Creates a drawing manager attached to the map that allows the user to draw
+            // markers, lines, and shapes.
+            drawingManager = new google.maps.drawing.DrawingManager(
+                {
+                    drawingMode: google.maps.drawing.OverlayType.POLYGON,
+                    drawingControlOptions: {
+                        drawingModes: [
+                            google.maps.drawing.OverlayType.POLYGON
+                        ]
+                    },
+                    markerOptions: {
+                        draggable: true
+                    },
+                    polylineOptions: {
+                        editable: true,
+                        draggable: true
+                    },
+                    rectangleOptions: polyOptions,
+                    circleOptions: polyOptions,
+                    polygonOptions: polyOptions,
+                    map: map
+                });
+
+            addPolygonClickHandlers();
+
+            // Clear the current selection when the drawing mode is changed, or when the
+            // map is clicked.
+            google.maps.event.addListener(drawingManager, 'drawingmode_changed', clearSelection);
+            google.maps.event.addListener(map, 'click', clearSelection);
+            google.maps.event.addDomListener($('deleteBtn'), 'click', deleteSelectedShape);
+            google.maps.event.addDomListener($('savePolygonBtn'), 'click', savePolygon);
+            google.maps.event.addDomListener($('loadPolygonBtn'), 'click', loadSavedPolygon);
+            google.maps.event.addDomListener($('downloadPolygonBtn'), 'click', downloadPolygon);
+
+            buildColorPalette();
+
+            //   //When polyline is created, add it to the polylines array
+            //   google.maps.event.addListener(drawingManager, 'polylinecomplete', function(polyline) {
+            //     polylines.push(polyline);
+            //     alert('polyline added to array');
+            //   });
+
+            google.maps.event.addListener(drawingManager, 'polygoncomplete', function (polygon)
+            {
+                missionPolygon = polygon;
+                drawingManager.setOptions({
+                    drawingControl: false
+                });
+            });
+
+            google.maps.event.addDomListener($('downloadWaypointsBtn'), 'click', function ()
+            {
+                if(missionPathPolyline != null)
+                {
+                    var missionWaypointString = buildMissionWaypointString(missionPathPolyline.getPath());
+                    download("mission.waypoints", missionWaypointString);
+                }
+            });
+
+            //functions here?
+
+            google.maps.event.addDomListener($('buildMissionBtn'), 'click', function ()
+            {
+                latLng = [];
+
+                var polygonBounds = missionPolygon.getPath();
+                // Iterate over the polygonBounds vertices.
+                polygonBounds.forEach(function (xy, i)
+                {
+                    latLng.push({ lat: xy.lat(), lng: xy.lng() });
+                });
+
+                var latLngBoundsString = JSON.stringify(latLng);
+                console.log(latLngBoundsString);
+                //Now we want to send this data up to the server
+                postData(latLngBoundsString, $('pathWidth').value);
+                saveMapLocationToCookie();
+            });
+
+        } //End function addDrawingToolsToMap
+
+
+        //Maps save location logic credit: https://www.daftlogic.com/sandbox-google-maps-remember-last-location.htm
+        function saveMapLocationToCookie()
+        {
+            var mapzoom = map.getZoom();
+            var mapcenter = map.getCenter();
+            var maplat = mapcenter.lat();
+            var maplng = mapcenter.lng();
+            var maptypeid = map.getMapTypeId();
+
+            var cookiestring = maplat + "_" + maplng + "_" + mapzoom + "_" + maptypeid;
+            var exp = new Date();     //set new date object
+            exp.setTime(exp.getTime() + (1000 * 60 * 60 * 24 * 30));     //set it 30 days ahead
+            setCookie("GoogleMapsLocation", cookiestring, exp);
+        }
+
+        function loadMapLocationFromCookie()
+        {
+            var loadedstring = getCookie("GoogleMapsLocation");
+            if (loadedstring)
+            {
+                var splitstr = loadedstring.split("_");
+                var latlng = new google.maps.LatLng(parseFloat(splitstr[0]), parseFloat(splitstr[1]));
+                
+                var savedMapZoom = parseFloat(splitstr[2]);
+
+                //If we don't scale-back the zoom when the user loads the page
+                //they may get a gray screen that's basically non-operable (i.e.
+                //unless they know to start zooming out)
+                if(savedMapZoom > 21.0)
+                {
+                    savedMapZoom = 21.0;
+                }
+
+                map.setCenter(latlng);
+                map.setZoom(savedMapZoom);
+                map.setMapTypeId(splitstr[3])
+            }
+        }
+
+        function setCookie(name, value, expires)
+        {
+            var theVal = escape(value);
+            document.cookie = name + "=" + escape(value) + "; path=/" + ((expires == null) ? "" : "; expires=" + expires.toGMTString());
+        }
+
+        function getCookie(c_name)
+        {
+            if (document.cookie.length > 0)
+            {
+                c_start = document.cookie.indexOf(c_name + "=");
+                if (c_start != -1)
+                {
+                    c_start = c_start + c_name.length + 1;
+                    c_end = document.cookie.indexOf(";", c_start);
+                    if (c_end == -1) c_end = document.cookie.length;
+                    return unescape(document.cookie.substring(c_start, c_end));
+                }
+            }
+            return "";
+        }
+
+    </script>
+    <script
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBXaBXU51BxNj6WuqdU-JHx5oIVR5uM350&callback=initMap&libraries=drawing,geometry"
+        async defer></script>
+</body>
+
+</html>
