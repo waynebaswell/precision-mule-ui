@@ -83,14 +83,22 @@
             <img src="logo-green.png" alt="Precision Mule" width="191px">
             <div class="sub-controls input">
             Mission Path Width (in Meters):<input type="text" name="pathWidth" id="pathWidth" value="0.5" required>
+            Mission Heading (in Degrees):<input type="text" name="heading" id="heading" value="0" oninput="headingOnInput(this.value)" required>
             </div>
             <div class="sub-controls actions">
                 <button id="buildMissionBtn">Build Mission</button>
                 <button id="downloadWaypointsBtn">Download Waypoint File</button>
             </div>
             <div class="sub-controls actions">
-                <button id="savePolygonBtn">Save Polygon</button>
-                <button id="loadPolygonBtn">Load Saved Polygon</button>
+                <button id="addCircleObstacleBtn">Add Circle Obstacle</button>
+                <button id="addPolyObstacleBtn">Add Freeform Obstacle</button>
+            </div>
+            <div class="sub-controls actions">
+                <button id="deleteBtn">Delete Selected Shape</button>
+            </div>
+            <div class="sub-controls actions">
+                <button id="savePolygonBtn">Save Polygon to Cache</button>
+                <button id="loadPolygonBtn">Load Cached Polygon</button>
             </div>
             <div class="sub-controls actions">
                 <div>
@@ -99,9 +107,6 @@
                 </div>
                 <button id="downloadPolygonBtn">Download Polygon File</button>
             </div>
-            <div class="sub-controls actions">
-                <button id="deleteBtn">Clear Map</button>
-            </div>
         </div>
     </div>
     <div id="map"></div>
@@ -109,14 +114,73 @@
         var map;
         var drawingManager;
         var selectedShape;
-        var colors = ['#1E90FF', '#FF1493', '#32CD32', '#FF8C00', '#4B0082'];
+        
         var selectedColor;
         var colorButtons = {};
         var polylines = [];
         var missionPolygon;
         var missionPathPolyline;
-        var polyOptions;
+
+        var polyOptions = {
+            strokeWeight: 0,
+            fillOpacity: 0.45,
+            editable: true,
+            draggable: true,
+            fillColor: '#1E90FF'
+        };
+
+        var startMarker;
+        var bearingLine;
+
+        var circleObstacles = new Set(); //Google maps circle obstacle objects
+        var polyObstacles = new Set(); //Google maps circle polygon objects
+
+        const colors = ['#1E90FF', '#FF1493', '#32CD32', '#FF8C00', '#4B0082'];
+        const R = 6371000; //Earth radius in meters
+        const d = 1000; //Heading line distance in meters
+
+        //var baseURL = "http://precisionmule.com";
+        var baseURL = "http://localhost:8080";
+
+        //Credit: https://blog.thecell.eu/blog/2017/11/12/customlines-for-google-maps-polylines/
+        //https://developers.google.com/maps/documentation/javascript/reference?#IconSequence
+        var iconsequ = [];
         
+        // SymbolPath https://developers.google.com/maps/documentation/javascript/reference?#SymbolPath
+        const redCircle = {
+            "path": "M -2,0 C -1.947018,-2.2209709 1.9520943,-2.1262691 2,0.00422057 2.0378955,1.3546185 1.5682108,2.0631345 1.4372396e-8,2.0560929 -1.7155482,2.0446854 -1.9145886,1.0142836 -2,0.06735507 Z",
+            "fillColor": "#ff0000",
+            "fillOpacity": 0.8,
+            "strokeColor": "#ff0000",
+            "strokeWeight": 30,
+            "scale": 0.5
+        };
+
+        const greenCircle = {
+            "path": "M -2,0 C -1.947018,-2.2209709 1.9520943,-2.1262691 2,0.00422057 2.0378955,1.3546185 1.5682108,2.0631345 1.4372396e-8,2.0560929 -1.7155482,2.0446854 -1.9145886,1.0142836 -2,0.06735507 Z",
+            "fillColor": "#ff0000",
+            "fillOpacity": 0.8,
+            "strokeColor": "#008000",
+            "strokeWeight": 30,
+            "scale": 0.50
+        };
+
+        // add Point at the start of the Line
+        iconsequ.push(
+        {
+            icon: greenCircle,
+            offset: "0%",
+            repeat: "0"
+        });
+        
+        // add Point at the end of the Line
+        iconsequ.push(
+        {
+            icon: redCircle,
+            offset: "100%",
+            repeat: "0"
+        });
+
         //JSON local storage helper functions
         //credit: https://stackoverflow.com/questions/2010892/storing-objects-in-html5-localstorage?rq=1
         Storage.prototype.setObject = function (key, value)
@@ -130,10 +194,52 @@
             return value && JSON.parse(value);
         }
 
+        //Functions for map geo math
+        //credit: http://www.movable-type.co.uk/scripts/latlong.html#destPoint
+
+        //Converts numeric degrees to radians
+        if (typeof(Number.prototype.toRad) === "undefined") {
+            Number.prototype.toRad = function() {
+                return this * Math.PI / 180;
+            }
+        }
+
+        //Converts radians to numeric (signed) degrees
+        if (typeof(Number.prototype.toDeg) === "undefined") {
+            Number.prototype.toDeg = function() {
+                return this * 180 / Math.PI;
+            }
+        }
+
         //document.getElementById shorthand
         //credit: https://stackoverflow.com/questions/6398787/javascript-shorthand-for-getelementbyid
         var $ = function( id ) { return document.getElementById( id ); };
 
+        //credit: https://stackoverflow.com/questions/10223898/draw-line-in-direction-given-distance-google-maps
+        function bearingLineEndpointCoords(lat1, lon1, brng)
+        {
+            lat1 = lat1.toRad();
+            lon1 = lon1.toRad();
+            brng = brng.toRad();
+            var lat2 = Math.asin( Math.sin(lat1)*Math.cos(d/R) + 
+              Math.cos(lat1)*Math.sin(d/R)*Math.cos(brng) );
+            var lon2 = lon1 + Math.atan2(Math.sin(brng)*Math.sin(d/R)*Math.cos(lat1), 
+                     Math.cos(d/R)-Math.sin(lat1)*Math.sin(lat2));
+            return { lat: lat2.toDeg(), lng: lon2.toDeg() };
+        }
+
+        //Call this guy when heading text input changes -- checks
+        //if input is a valid number and if so,
+        //re-draws the bearing line
+        function headingOnInput(val)
+        {
+            !isNaN(val)
+            {
+                drawBearingLine(startMarker.getPosition().lat(), startMarker.getPosition().lng(), parseFloat($('heading').value));
+            }
+        }
+
+        //save the waypoints locally as an ArduPilot waypoint file
         function download(filename, text)
         {
             var element = document.createElement('a');
@@ -148,6 +254,8 @@
             document.body.removeChild(element);
         }
 
+        //Sets up logic to allow user to upload a mission polygon file
+        //into the app
         function setupFileListener()
         {
             $('file').onchange = function ()
@@ -173,47 +281,6 @@
                 this.value = null;
             };
         }
-
-        setupFileListener();
-
-        //Credit: https://blog.thecell.eu/blog/2017/11/12/customlines-for-google-maps-polylines/
-        //https://developers.google.com/maps/documentation/javascript/reference?#IconSequence
-        let iconsequ = [];
-        
-        // SymbolPath https://developers.google.com/maps/documentation/javascript/reference?#SymbolPath
-        let redCircle = {
-            "path": "M -2,0 C -1.947018,-2.2209709 1.9520943,-2.1262691 2,0.00422057 2.0378955,1.3546185 1.5682108,2.0631345 1.4372396e-8,2.0560929 -1.7155482,2.0446854 -1.9145886,1.0142836 -2,0.06735507 Z",
-            "fillColor": "#ff0000",
-            "fillOpacity": 0.8,
-            "strokeColor": "#ff0000",
-            "strokeWeight": 20,
-            "scale": 0.5
-        };
-
-        let greenCircle = {
-            "path": "M -2,0 C -1.947018,-2.2209709 1.9520943,-2.1262691 2,0.00422057 2.0378955,1.3546185 1.5682108,2.0631345 1.4372396e-8,2.0560929 -1.7155482,2.0446854 -1.9145886,1.0142836 -2,0.06735507 Z",
-            "fillColor": "#ff0000",
-            "fillOpacity": 0.8,
-            "strokeColor": "#008000",
-            "strokeWeight": 20,
-            "scale": 0.5
-        };
-        
-        // add Point at the start of the Line
-        iconsequ.push(
-        {
-            icon: greenCircle,
-            offset: "0%",
-            repeat: "0"
-        });
-        
-        // add Point at the end of the Line
-        iconsequ.push(
-        {
-            icon: redCircle,
-            offset: "100%",
-            repeat: "0"
-        });
  
         function initMap()
         {
@@ -228,6 +295,8 @@
             setCustomZoom();
             addDrawingToolsToMap();
             loadMapLocationFromCookie();
+            addStartingLocationMarker();
+            setupFileListener();
         }
 
         //Increase the map zoom for fine-tuning mission location
@@ -267,28 +336,73 @@
             {
                 clearSelection();
                 shape.setEditable(true);
-                selectColor(shape.get('fillColor') || shape.get('strokeColor'));
+                //selectColor(shape.get('fillColor') || shape.get('strokeColor'));
             }
 
             selectedShape = shape;
         }
 
+        //If the selected shape is the main mission polygon, present the user a 
+        //confirmation box just to ensure this is
+        //what they'd wanted to do
+        function confirmDeleteSelectedShape()
+        {
+            if(selectedShape != null)
+            {
+                if(selectedShape == missionPolygon)
+                {
+                    polyOptions.fillColor = '#CCCC00';
+                    missionPolygon.setOptions(polyOptions);
+                    setTimeout(confirmDeleteSelectedShapeAsync, 100);
+                }
+                else
+                {
+                    deleteSelectedShape();
+                }
+            }
+        }
+
+        function confirmDeleteSelectedShapeAsync()
+        {
+            var proceed = confirm("Main polygon is selected..are you sure?");
+            polyOptions.fillColor = '#1E90FF'
+            missionPolygon.setOptions(polyOptions);
+            if (proceed)
+            {
+                deleteSelectedShape();
+            } 
+        }
+
         function deleteSelectedShape()
         {
-            if (missionPolygon)
+            if(selectedShape != null)
             {
-                missionPolygon.setMap(null);
-                drawingManager.setOptions({
-                    drawingMode: google.maps.drawing.OverlayType.POLYGON,
-                    drawingControl: true
-                });
-                
-            }
-            if (missionPathPolyline != null) 
-            {
-                missionPathPolyline.setMap(null);
-            }
+                if (selectedShape == missionPolygon)
+                {
+                    missionPolygon.setMap(null);
+                    drawingManager.setOptions({
+                        drawingMode: google.maps.drawing.OverlayType.POLYGON,
+                        drawingControl: true
+                    });
 
+                    if (missionPathPolyline != null) 
+                    {
+                        missionPathPolyline.setMap(null);
+                    }  
+                }
+                else
+                {
+                    if(circleObstacles.has(selectedShape))
+                    {
+                        circleObstacles.delete(selectedShape);
+                    }
+                    if(polyObstacles.has(selectedShape))
+                    {
+                        polyObstacles.delete(selectedShape);
+                    }
+                    selectedShape.setMap(null);
+                }
+            }
         }
 
         function savePolygon()
@@ -366,7 +480,6 @@
                         }
                         setSelection(missionPolygon);
                 });
-                  
             }
         }
 
@@ -447,12 +560,12 @@
 
         function postData(latLngData, mowingPathWidthInMeters)
         {
-            fetch('http://precisionmule.com/missionbuilder/api/buildMissionFromLatLngPoints?mowingPathWidthInMeters='+mowingPathWidthInMeters, {
+            fetch(baseURL + '/missionbuilder/api/buildMissionFromLatLngPoints?mowingPathWidthInMeters='+mowingPathWidthInMeters, {
                 method: 'POST',
                 body: latLngData
             }).then((res) => res.json())
                 .then((data) => addMissionPolylineToMap(data))
-                .catch((err) => console.log("Whupps we have an error: " + err))
+                .catch((err) => console.log("Whupps we have an error: " + err));
         }
 
         function addMissionPolylineToMap(jsonData)
@@ -568,17 +681,77 @@
             );
         }
 
+        //Add a generic polygon-shaped area to the center of the map -- the idea
+        //is that users will move and reshape the polygon over
+        //areas that they want their mower to avoid
+        function addPolyObstacle()
+        {
+            var polyCoords = [
+                {lat: map.getCenter().lat() + .00002, lng: map.getCenter().lng() - .00002},
+                {lat: map.getCenter().lat() + .00002, lng: map.getCenter().lng() + .00002},
+                {lat: map.getCenter().lat() - .00002, lng: map.getCenter().lng() + .00002},
+                {lat: map.getCenter().lat() - .00002, lng: map.getCenter().lng() - .00002}
+            ];
+            //add obstacle to visible center of map
+            var polyObstacle = new google.maps.Polygon({
+                map: map,
+                paths: polyCoords,
+                strokeColor: '#FF0000',
+                strokeOpacity: 0.8,
+                strokeWeight: 2,
+                fillColor: '#FF0000',
+                fillOpacity: 0.35,
+                draggable: true,
+                editable: true,
+                geodesic: true,
+                zIndex: 100
+            });
+
+            google.maps.event.addListener(polyObstacle, 'click',
+                function (e) 
+                {
+                    setSelection(polyObstacle);
+                });
+            
+            setSelection(polyObstacle);
+
+            polyObstacles.add(polyObstacle);
+        }
+
+        //Add a generic circle-shaped area to the center of the map -- the idea
+        //is that users will move and reshape the circle over
+        //areas that they want their mower to avoid
+        function addCircleObstacle()
+        {
+            var circleObstacle = new google.maps.Circle({
+                strokeColor: '#FF0000',
+                strokeOpacity: 0.8,
+                strokeWeight: 2,
+                fillColor: '#FF0000',
+                fillOpacity: 0.35,
+                map: map,
+                center: map.getCenter(),
+                radius: 2,
+                draggable: true,
+                editable: true,
+                geodesic: true,
+                zIndex: 100
+                });
+            
+            google.maps.event.addListener(circleObstacle, 'click',
+                function (e) 
+                {
+                    setSelection(circleObstacle);
+                });
+            
+            setSelection(circleObstacle);
+
+            circleObstacles.add(circleObstacle);
+        }
+
         //Add drawing tools (i.e. that user will use to draw mission) to map
         function addDrawingToolsToMap() 
         {
-            polyOptions =
-            {
-                strokeWeight: 0,
-                fillOpacity: 0.45,
-                editable: true,
-                draggable: true,
-                fillColor: '#ff0000'
-            };
             // Creates a drawing manager attached to the map that allows the user to draw
             // markers, lines, and shapes.
             drawingManager = new google.maps.drawing.DrawingManager(
@@ -608,10 +781,12 @@
             // map is clicked.
             google.maps.event.addListener(drawingManager, 'drawingmode_changed', clearSelection);
             google.maps.event.addListener(map, 'click', clearSelection);
-            google.maps.event.addDomListener($('deleteBtn'), 'click', deleteSelectedShape);
+            google.maps.event.addDomListener($('deleteBtn'), 'click', confirmDeleteSelectedShape);
             google.maps.event.addDomListener($('savePolygonBtn'), 'click', savePolygon);
             google.maps.event.addDomListener($('loadPolygonBtn'), 'click', loadSavedPolygon);
             google.maps.event.addDomListener($('downloadPolygonBtn'), 'click', downloadPolygon);
+            google.maps.event.addDomListener($('addCircleObstacleBtn'), 'click', addCircleObstacle);
+            google.maps.event.addDomListener($('addPolyObstacleBtn'), 'click', addPolyObstacle);
 
             buildColorPalette();
 
@@ -638,11 +813,9 @@
                 }
             });
 
-            //functions here?
-
             google.maps.event.addDomListener($('buildMissionBtn'), 'click', function ()
             {
-                latLng = [];
+                var latLng = [];
 
                 var polygonBounds = missionPolygon.getPath();
                 // Iterate over the polygonBounds vertices.
@@ -653,13 +826,62 @@
 
                 var latLngBoundsString = JSON.stringify(latLng);
                 console.log(latLngBoundsString);
+
+                var polyArray = [];
+                polyObstacles.forEach(function (poly, i)
+                {
+                    var polyObstacleBoundsArray = [];
+                    poly.getPath().forEach(function (xy, i)
+                    {
+                        polyObstacleBoundsArray.push({ lat: xy.lat(), lng: xy.lng() });
+                    });
+                    polyArray.push(polyObstacleBoundsArray);
+                });
+
+                var circleArray = [];
+                circleObstacles.forEach(function (circle, i)
+                {
+                    //Begin treating these guys as true circles
+                    // var circleObstacleMap = new Map();
+                    // var center = circle.getCenter();
+                    // var radius = circle.getRadius();
+                    // circleObstacleMap['radius'] = radius;
+                    // circleObstacleMap['lat'] = center.lat();
+                    // circleObstacleMap['lng'] = center.lng();
+                    // circleArray.push(circleObstacleMap);
+                    //End treating as true circles
+
+                    var circleAsLagLngArray = approximateCircleAsPolygon(circle.getCenter(), circle.getRadius(), 18);
+                    polyArray.push(circleAsLagLngArray);
+                });
+
+                var truckLoadOfDataForServer = new Map();
+                truckLoadOfDataForServer['missionPolygon'] = latLng;
+                truckLoadOfDataForServer['circleObstacles'] = circleArray;
+                truckLoadOfDataForServer['polyObstacles'] = polyArray;
+                truckLoadOfDataForServer['mowingPathWidthInMeters'] = $('pathWidth').value;
+                truckLoadOfDataForServer['heading'] = $('heading').value;
+
                 //Now we want to send this data up to the server
-                postData(latLngBoundsString, $('pathWidth').value);
+                postData(JSON.stringify(truckLoadOfDataForServer), $('pathWidth').value);
                 saveMapLocationToCookie();
             });
 
         } //End function addDrawingToolsToMap
 
+        //Approximate circle as polygon
+        //Returns [{lat: , lng:}, {lat: , lng}, ...]
+        //Credit: https://stackoverflow.com/questions/24733481/how-to-draw-a-circle-using-polygon-in-googlemaps
+        function approximateCircleAsPolygon(center, radius, points)
+        {
+            var a=[],p=360/points,d=0;
+            for(var i=0;i<points;++i,d+=p)
+            {
+                var offsetLatLng = google.maps.geometry.spherical.computeOffset(center,radius,d);
+                a.push({ lat: offsetLatLng.lat(), lng: offsetLatLng.lng() });
+            }
+            return a;
+        }
 
         //Maps save location logic credit: https://www.daftlogic.com/sandbox-google-maps-remember-last-location.htm
         function saveMapLocationToCookie()
@@ -698,6 +920,15 @@
                 map.setZoom(savedMapZoom);
                 map.setMapTypeId(splitstr[3])
             }
+            else
+            {
+                //baswell begin testing
+                var latlng = new google.maps.LatLng(30.563413767103118, -87.67843377406932);
+                map.setCenter(latlng);
+                map.setZoom(21);
+                map.setMapTypeId("hybrid")
+                //baswell end testing
+            }
         }
 
         function setCookie(name, value, expires)
@@ -720,6 +951,68 @@
                 }
             }
             return "";
+        }
+
+        // Adds a marker to the map.
+        function addStartingLocationMarker() 
+        {
+            startMarker = new google.maps.Marker({
+                position: map.getCenter(),
+                label: 'Go',
+                title: 'Location where robot begins mission',
+                draggable: true,
+                map: map
+            });
+
+            var bearingEndPointLatLong = bearingLineEndpointCoords(map.getCenter().lat(), map.getCenter().lng(), parseFloat($('heading').value));
+
+            var bearingLineCoordinates = [
+                {lat: map.getCenter().lat(), lng: map.getCenter().lng()},
+                {lat: bearingEndPointLatLong.lat, lng: bearingEndPointLatLong.lng}
+            ];
+
+            // Define a symbol using SVG path notation
+            var lineSymbol = {
+                path: 'M 0,-1 0,1',
+                strokeColor: '#FF0000',
+                strokeOpacity: 0.8,
+                scale: 2
+            };
+
+            bearingLine = new google.maps.Polyline({
+                path: bearingLineCoordinates,
+                geodesic: true,
+                strokeOpacity: 0,
+                icons: [{
+                    icon: lineSymbol,
+                    offset: '0',
+                    repeat: '20px'
+                }],
+                map: map
+            });
+
+            startMarkerMovedRedrawHeadingListener();
+        }
+
+        function drawBearingLine(latStart, lngStart, heading)
+        {
+            var bearingEndPointLatLong = bearingLineEndpointCoords(latStart, lngStart, heading);
+            var bearingLineCoordinates = [
+                {lat: latStart, lng: lngStart},
+                {lat: bearingEndPointLatLong.lat, lng: bearingEndPointLatLong.lng}
+            ];
+            bearingLine.setPath(bearingLineCoordinates);
+        }
+
+        function startMarkerMovedRedrawHeadingListener()
+        {
+            google.maps.event.addListener(startMarker, 'dragend', function(evt){
+                drawBearingLine(evt.latLng.lat(), evt.latLng.lng(), parseFloat($('heading').value));
+            });
+
+            google.maps.event.addListener(startMarker, 'drag', function(evt){
+                drawBearingLine(evt.latLng.lat(), evt.latLng.lng(), parseFloat($('heading').value));
+            }); 
         }
 
     </script>
