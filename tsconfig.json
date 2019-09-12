@@ -1,0 +1,10 @@
+{
+    "compilerOptions": 
+    {
+        "lib": [ "dom",  "es2017" ],
+        "strict": true,
+        "target": "es2020",
+        "typeRoots": ["node_modules/@types", "types"],
+        "watch": true
+    }
+}
