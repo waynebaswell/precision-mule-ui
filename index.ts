@@ -125,9 +125,9 @@ let $ = function( id: string ) { return document.getElementById( id ); };
 /**
  * credit: https://stackoverflow.com/questions/10223898/draw-line-in-direction-given-distance-google-maps
  * 
- * @param lat1 
- * @param lon1 
- * @param brng 
+ * @param lat1 Latitude of starting point marker
+ * @param lon1 Longitude of starting point marker
+ * @param brng Mission bearing
  */
 function bearingLineEndpointCoords(lat1: number, lon1: number, brng:number): ILL
 {
@@ -790,7 +790,7 @@ function addDrawingToolsToMap(): void
 
     google.maps.event.addDomListener(<HTMLButtonElement> $('buildMissionBtn'), 'click', function ()
     {
-        let missionPolygonLatLng: Array<LL>  = [];
+        let missionPolygonLatLng: Array<ILL>  = [];
 
         var polygonBounds = missionPolygon.getPath();
         // Iterate over the polygonBounds vertices.
@@ -802,10 +802,10 @@ function addDrawingToolsToMap(): void
         var latLngBoundsString = JSON.stringify(missionPolygonLatLng);
         console.log(latLngBoundsString);
 
-        var polyArray: Array<Array<LL>> = [];
+        var polyArray: Array<Array<ILL>> = [];
         polyObstacles.forEach(function (poly, i)
         {
-            var polyObstacleBoundsArray: Array<LL> = [];
+            var polyObstacleBoundsArray: Array<ILL> = [];
             poly.getPath().forEach(function (xy, i)
             {
                 polyObstacleBoundsArray.push(new LL(xy.lat(), xy.lng())); 
@@ -813,7 +813,7 @@ function addDrawingToolsToMap(): void
             polyArray.push(polyObstacleBoundsArray);
         });
 
-        var circleArray : Array<LL> = [];
+        var circleArray : Array<ILL> = [];
         circleObstacles.forEach(function (circle, i)
         {
             //Begin treating these guys as true circles
@@ -826,7 +826,7 @@ function addDrawingToolsToMap(): void
             // circleArray.push(circleObstacleMap);
             //End treating as true circles
 
-            var circleAsLagLngArray: Array<LL> = approximateCircleAsPolygon(circle.getCenter(), circle.getRadius(), 18);
+            var circleAsLagLngArray: Array<ILL> = approximateCircleAsPolygon(circle.getCenter(), circle.getRadius(), 18);
             polyArray.push(circleAsLagLngArray);
         });
 
