@@ -1,0 +1,45 @@
+#map
+{
+    height: 100%;
+}
+
+html,
+body 
+{
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+#panel 
+{
+    width: 200px;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    float: left;
+    margin: 10px;
+}
+
+#deleteBtn 
+{
+    margin-top: 5px;
+}
+
+#controls button, input
+{
+    margin-top:3px;
+    margin-bottom:3px;
+    width: 100%;
+}
+
+#controls input 
+{
+    width: 194px;
+}
+
+.sub-controls 
+{
+    border-bottom: 1px solid #e5e5e5;
+    padding-top: 13px;
+    padding-bottom: 13px;
+}

@@ -2,72 +2,15 @@
 <html>
 
 <head>
-    <!-- Global site tag (gtag.js) - Google Analytics -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-96994646-1"></script>
-    <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-
-    gtag('config', 'UA-96994646-1');
-    </script>
-
     <title>Precision Mule</title>
     <meta name="viewport" content="initial-scale=1.0">
     <meta charset="utf-8">
-    <style>
-        #map {
-            height: 100%;
-        }
-
-        html,
-        body {
-            height: 100%;
-            margin: 0;
-            padding: 0;
-        }
-
-        #panel {
-            width: 200px;
-            font-family: Arial, sans-serif;
-            font-size: 13px;
-            float: right;
-            margin: 10px;
-        }
-
-        .color-button {
-            width: 14px;
-            height: 14px;
-            font-size: 0;
-            margin: 2px;
-            float: left;
-            cursor: pointer;
-        }
-
-        #deleteBtn {
-            margin-top: 5px;
-        }
-        #controls button, input{
-            margin-top:3px;
-            margin-bottom:3px;
-            width: 100%;
-        }
-
-        #controls input {
-            width: 194px;
-        }
-        .sub-controls {
-            border-bottom: 1px solid #e5e5e5;
-            padding-top: 13px;
-            padding-bottom: 13px;
-        }
-
-    </style>
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="stylesheet" type="text/css" href="./css/styles.css"/>
+    <link rel="apple-touch-icon" sizes="180x180" href="./img/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="./img/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="./img/favicon-16x16.png">
     <link rel="manifest" href="/site.webmanifest">
-    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#5bbad5">
+    <link rel="mask-icon" href="./img/safari-pinned-tab.svg" color="#5bbad5">
     <meta name="msapplication-TileColor" content="#da532c">
     <meta name="theme-color" content="#ffffff">
 </head>
@@ -75,7 +18,7 @@
 <body>
     <div id="panel">
         <div id="controls">
-            <img src="logo-green.png" alt="Precision Mule" width="191px">
+            <img src="./img/logo-green.png" alt="Precision Mule" width="191px">
             <div class="sub-controls input">
             Mission Path Width (in Meters):<input type="text" name="pathWidth" id="pathWidth" value="0.5" required>
             Mission Heading (in Degrees):<input type="text" name="heading" id="heading" value="0" oninput="headingOnInput(this.value)" required>
@@ -109,6 +52,10 @@
     <script
         src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBXaBXU51BxNj6WuqdU-JHx5oIVR5uM350&callback=initMap&libraries=drawing,geometry"
         async defer></script>
+
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-96994646-1"></script>
+    <script src="./js/analytics.js"></script>
 </body>
 
 </html>
