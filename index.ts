@@ -3,17 +3,18 @@ let drawingManager: google.maps.drawing.DrawingManager;
 let selectedShape: google.maps.MVCObject;
 
 let selectedColor: string;
-let colorButtons:object = {};
 
 let missionPolygon: google.maps.Polygon;
 let missionPathPolyline: google.maps.Polyline;
+
+const colors: string[] = ['#1E90FF', '#FF1493', '#32CD32', '#FF8C00', '#4B0082'];
 
 let polyOptions: any = {
     strokeWeight: 0,
     fillOpacity: 0.45,
     editable: true,
     draggable: true,
-    fillColor: '#1E90FF'
+    fillColor: colors[0]
 };
 
 let startMarker: google.maps.Marker;
@@ -22,7 +23,6 @@ let bearingLine: google.maps.Polyline;
 let circleObstacles: Set<google.maps.Circle> = new Set(); //Google maps circle obstacle objects
 let polyObstacles: Set<google.maps.Polygon> = new Set(); //Google maps circle polygon objects
 
-const colors: string[] = ['#1E90FF', '#FF1493', '#32CD32', '#FF8C00', '#4B0082'];
 const R: number = 6371000; //Earth radius in meters
 const d: number = 1000; //Heading line distance in meters
 
@@ -33,9 +33,16 @@ const baseURL: string = "http://localhost:8080";
 //https://developers.google.com/maps/documentation/javascript/reference?#IconSequence
 var iconsequ: Array<object> = [];
 
+//Interface for lat/lng position objects
+interface ILL
+{
+    lat: number;
+    lng: number;
+}
+
 //Wrapper type for passing around LatLong values and sending them (via JSON)
 //back and forth between the client and server
-class LL
+class LL implements ILL
 {
     lat: number = 0;
     lng: number = 0;
@@ -111,12 +118,18 @@ if (typeof(Number.prototype.toDeg) === "undefined") {
     }
 }
 
-//document.getElementById shorthand
-//credit: https://stackoverflow.com/questions/6398787/javascript-shorthand-for-getelementbyid
+// document.getElementById shorthand
+// credit: https://stackoverflow.com/questions/6398787/javascript-shorthand-for-getelementbyid
 let $ = function( id: string ) { return document.getElementById( id ); };
 
-//credit: https://stackoverflow.com/questions/10223898/draw-line-in-direction-given-distance-google-maps
-function bearingLineEndpointCoords(lat1: number, lon1: number, brng:number): LL
+/**
+ * credit: https://stackoverflow.com/questions/10223898/draw-line-in-direction-given-distance-google-maps
+ * 
+ * @param lat1 
+ * @param lon1 
+ * @param brng 
+ */
+function bearingLineEndpointCoords(lat1: number, lon1: number, brng:number): ILL
 {
     lat1 = lat1.toRad();
     lon1 = lon1.toRad();
@@ -128,9 +141,13 @@ function bearingLineEndpointCoords(lat1: number, lon1: number, brng:number): LL
     return new LL(lat2.toDeg(), lon2.toDeg());
 }
 
-//Call this guy when heading text input changes -- checks
-//if input is a valid number and if so,
-//re-draws the bearing line
+/**
+ * Call this guy when heading text input changes -- checks
+ * if input is a valid number and if so,
+ * re-draws the bearing line
+ * 
+ * @param val Heading value user enters in the heading input box
+ */
 function headingOnInput(val: any): void
 {
     if (!isNaN(val))
@@ -151,7 +168,12 @@ function headingOnInput(val: any): void
     }
 }
 
-//save the waypoints locally as an ArduPilot waypoint file
+/**
+ * Save the waypoints locally as an ArduPilot waypoint file
+ * 
+ * @param filename Filename to save file locally as
+ * @param text Contents of file
+ */
 function download(filename: string, text: string): void
 {
     var element = document.createElement('a');
@@ -166,9 +188,11 @@ function download(filename: string, text: string): void
     document.body.removeChild(element);
 }
 
-//Sets up logic to allow user to upload a mission polygon file
-//into the app
-function setupFileListener()
+/**
+ * Sets up logic to allow user to upload a mission polygon file
+ * into the app
+ */
+function setupFileListener(): void
 {
     $('file')!.onchange = function ()
     {
@@ -194,7 +218,10 @@ function setupFileListener()
     };
 }
 
-function initMap()
+/**
+ * Initial map loading and setup
+ */
+function initMap(): void
 {
     map = new google.maps.Map($('map'), {
         center: { lat: 30.56, lng: -87.67 },
@@ -207,17 +234,20 @@ function initMap()
     setCustomZoom();
     addDrawingToolsToMap();
     loadMapLocationFromCookie();
-    addStartingLocationMarker();
+    let headingNumber = parseFloat((<HTMLInputElement> $('heading')).value);
+    addStartingLocationMarker(headingNumber);
     setupFileListener();
 }
 
-//Increase the map zoom for fine-tuning mission location
-//Credit: https://stackoverflow.com/questions/30136525/allow-further-zoom-on-google-maps-v3-satellite-view?rq=1
-function setCustomZoom()
+/**
+ * Increase the map zoom for fine-tuning mission location
+ * Credit: https://stackoverflow.com/questions/30136525/allow-further-zoom-on-google-maps-v3-satellite-view?rq=1
+ */
+function setCustomZoom(): void
 {
-    zoomRangeModifier = map.__proto__.__proto__.__proto__;
-    originalSetFunc = zoomRangeModifier.set;
-    hijackedSetFunc = function (a, b)
+    let zoomRangeModifier: any = map.__proto__.__proto__.__proto__;
+    let originalSetFunc: any = zoomRangeModifier.set;
+    let hijackedSetFunc: any = function (a: any, b: any)
     {
         if (a === 'maxZoom')
         {
@@ -228,8 +258,10 @@ function setCustomZoom()
     zoomRangeModifier.set = hijackedSetFunc;
 }
 
-//Map karate credit to Ilya Radchenko: http://bl.ocks.org/knownasilya/89a32e572989f0aff1f8
-function clearSelection()
+/**
+ * Map karate credit to Ilya Radchenko: http://bl.ocks.org/knownasilya/89a32e572989f0aff1f8
+ */
+function clearSelection(): void
 {
     if (selectedShape)
     {
@@ -242,7 +274,13 @@ function clearSelection()
     }
 }
 
-function setSelection(shape)
+/**
+ * Sets the selectedShape var that's used in other places and makes the shape
+ * editable if it's not a marker
+ * 
+ * @param shape Shape object to set as selected
+ */
+function setSelection(shape: google.maps.MVCObject): void
 {
     if (shape.type !== 'marker')
     {
@@ -254,10 +292,12 @@ function setSelection(shape)
     selectedShape = shape;
 }
 
-//If the selected shape is the main mission polygon, present the user a 
-//confirmation box just to ensure this is
-//what they'd wanted to do
-function confirmDeleteSelectedShape()
+/**
+ * If the selected shape is the main mission polygon, present the user
+ * a confirmation box just to ensure this is
+ * what they'd wanted to do
+ */
+function confirmDeleteSelectedShape(): void
 {
     if(selectedShape != null)
     {
@@ -274,10 +314,15 @@ function confirmDeleteSelectedShape()
     }
 }
 
-function confirmDeleteSelectedShapeAsync()
+/**
+ * Helper function for confirming because I was having trouble
+ * getting the selected polygon to highlight without a
+ * little wait before the js confirm dialog
+ */
+function confirmDeleteSelectedShapeAsync(): void
 {
     var proceed = confirm("Main polygon is selected..are you sure?");
-    polyOptions.fillColor = '#1E90FF'
+    polyOptions.fillColor = colors[0];
     missionPolygon.setOptions(polyOptions);
     if (proceed)
     {
@@ -285,7 +330,10 @@ function confirmDeleteSelectedShapeAsync()
     } 
 }
 
-function deleteSelectedShape()
+/**
+ * Delete shape that is currently selected on map
+ */
+function deleteSelectedShape(): void
 {
     if(selectedShape != null)
     {
@@ -317,23 +365,29 @@ function deleteSelectedShape()
     }
 }
 
-function savePolygon()
+/**
+ * Save the main mission polygon to local storage
+ */
+function savePolygon(): void
 {
-    var lls = [];
+    var lls: Array<ILL>  = [];
 
     var polygonBounds = missionPolygon.getPath();
     // Iterate over the polygonBounds vertices.
     polygonBounds.forEach(function (xy, i)
     {
-        lls.push({ lat: xy.lat(), lng: xy.lng() });
+        lls.push(new LL( xy.lat(), xy.lng() ));
     })
 
     localStorage.setObject('missionPolygonlls', lls);
 }
 
-function downloadPolygon()
+/**
+ * Download the mission polygon to a local json file
+ */
+function downloadPolygon(): void
 {
-    var lls = [];
+    var lls: Array<ILL>  = [];
     
     if(missionPolygon)
     {
@@ -341,7 +395,7 @@ function downloadPolygon()
         // Iterate over the polygonBounds vertices.
         polygonBounds.forEach(function (xy, i)
         {
-            lls.push({ lat: xy.lat(), lng: xy.lng() });
+            lls.push(new LL(xy.lat(), xy.lng()));
         })
         var llsAsJSONString = JSON.stringify(lls);
 
@@ -349,13 +403,22 @@ function downloadPolygon()
     }
 }
 
-function loadSavedPolygon()
+/**
+ * Load mission polygon from polygon saved in localStorage
+ */
+function loadSavedPolygon(): void
 {
-    let missionPolygonlls = localStorage.getObject('missionPolygonlls');
+    let missionPolygonlls: Array<ILL> = localStorage.getObject('missionPolygonlls');
     loadPolygonfromllJSON(missionPolygonlls);
 }
 
-function loadPolygonfromllJSON(missionPolygonlls)
+/**
+ * Load mission polygon into visible google map from given Array<ILL>
+ * 
+ * @param missionPolygonlls Array<ILL> of coordinates representing the 
+ * main mission polygon
+ */
+function loadPolygonfromllJSON(missionPolygonlls: Array<ILL>): void
 {
     deleteSelectedShape();
     var pathMVCArray =  new google.maps.MVCArray<google.maps.LatLng>();
@@ -395,14 +458,14 @@ function loadPolygonfromllJSON(missionPolygonlls)
     }
 }
 
-function selectColor(color) 
+/**
+ * I'm not entirely sure if we actually still need this function
+ * 
+ * @param color String hex color (i.e. '#1E90FF')
+ */
+function selectColor(color: string): void
 {
     selectedColor = color;
-    for (var i = 0; i < colors.length; ++i) 
-    {
-        var currColor = colors[i];
-        colorButtons[currColor].style.border = currColor == color ? '2px solid #789' : '2px solid #fff';
-    }
 
     // Retrieves the current options from the drawing manager and replaces the
     // stroke or fill color as appropriate.
@@ -423,70 +486,51 @@ function selectColor(color)
     drawingManager.set('polygonOptions', polygonOptions);
 }
 
-function setSelectedShapeColor(color) 
-{
-    if (selectedShape) 
-    {
-        if (selectedShape.type == google.maps.drawing.OverlayType.POLYLINE) 
-        {
-            selectedShape.set('strokeColor', color);
-        }
-        else 
-        {
-            selectedShape.set('fillColor', color);
-        }
-    }
-}
-
-function makeColorButton(color) 
-{
-    var button = document.createElement('span');
-    button.className = 'color-button';
-    button.style.backgroundColor = color;
-    google.maps.event.addDomListener(button, 'click',
-        function () 
-        {
-            selectColor(color);
-            setSelectedShapeColor(color);
-        });
-    return button;
-}
-
-function buildColorPalette() 
-{
-    var colorPalette = $('color-palette');
-    for (var i = 0; i < colors.length; ++i) 
-    {
-        var currColor = colors[i];
-        var colorButton = makeColorButton(currColor);
-        colorPalette.appendChild(colorButton);
-        colorButtons[currColor] = colorButton;
-    }
-    selectColor(colors[0]);
-}
-
-function postData(latLngData: string, mowingPathWidthInMeters: string)
+/**
+ * Post all the mission data up to the server so that the server can build
+ * the corresponding mission path
+ * 
+ * @param truckLoadOfDataForServer Big stringified json object of data -- this
+ * should probably be broken down into several parameters rather than this
+ * big opaque key/value json obect we're currently rolling
+ * @param mowingPathWidthInMeters Distance between waypoints
+ */
+function postData(truckLoadOfDataForServer: string, mowingPathWidthInMeters: string): void
 {
     fetch(baseURL + '/missionbuilder/api/buildMissionFromLatLngPoints?mowingPathWidthInMeters='+mowingPathWidthInMeters, {
         method: 'POST',
-        body: latLngData
+        body: truckLoadOfDataForServer
     }).then((res) => res.json())
         .then((data) => addMissionPolylineToMap(data))
         .catch((err) => console.log("Whupps we have an error: " + err));
 }
 
-function addMissionPolylineToMap(jsonData: any): void
+/**
+ * Draw polyline on map representing the mission path
+ * 
+ * @param jsonData Sequentially ordered array of ILL Latitude/Longitude values
+ * representing all waypoints that comprise the mission -- in other words,
+ * the first element of the array is the first point of the mission,
+ * the second element is the next point the rover will navigate
+ * to and so on 'till the last element in the array which is
+ * the final waypoint of the mission path
+ */
+function addMissionPolylineToMap(jsonData: Array<ILL>): void
 {
     if (missionPathPolyline != null) 
     {
         missionPathPolyline.setMap(null);
     }
 
+    //Logging mission polyline for debugging
+    console.log("Begin logging missionPathPolyline");
     for (var x = 0; x < jsonData.length; x++)
     {
         var latLng = jsonData[x];
         console.log(`${x} Latitude: ${latLng.lat} Longitude: ${latLng.lng}`);
     }
+    console.log("End logging missionPathPolyline");
+
     missionPathPolyline = new google.maps.Polyline({
         path: jsonData,
         geodesic: true,
@@ -500,8 +544,7 @@ function addMissionPolylineToMap(jsonData: any): void
 }
 
 /**
- * 
- * Builds a big ArduPilot mission waypoint string that the user will be able to 
+ * Build a big ArduPilot mission waypoint string that the user will be able to 
  * download as a file (and then load the file into their Flight Controller)
  * 
  * @see https://mavlink.io/en/file_formats/ For more information 
@@ -532,20 +575,32 @@ function buildMissionWaypointString(waypointMVCArray: google.maps.MVCArray<googl
     return missionString;
 }
 
-//Build the standard first line of the waypoint file
+/**
+ * Build the standard first line of the waypoint file
+ */
 function buildWaypointFileFirstLine(): string
 {
     var header: string = "QGC WPL 110";
     return header;
 }
 
-//Build the standard waypoint line
+/**
+ * Build the standard waypoint line
+ * 
+ * @param index Zero-based incrementing index that is the first element in the waypoint line format
+ * (i.e. the first waypoint is 0, the next is 1 and so on)
+ * @param lat Latitude
+ * @param lng Longitude
+ */
 function buildWaypointFileLatLngLine(index: number, lat: number, lng: number): string
 {
     return index + "\t0\t3\t16\t0\t0\t0\t0\t" + lat + "\t" + lng + "\t100.000000\t1";
 }
 
-function addPolygonClickHandlers()
+/**
+ * 
+ */
+function addPolygonClickHandlers(): void
 {
     google.maps.event.addListener(drawingManager, 'overlaycomplete',
         function (e) 
@@ -602,10 +657,12 @@ function addPolygonClickHandlers()
     );
 }
 
-//Add a generic polygon-shaped area to the center of the map -- the idea
-//is that users will move and reshape the polygon over
-//areas that they want their mower to avoid
-function addPolyObstacle()
+/**
+ * Add a generic polygon-shaped area to the center of the map -- the idea
+ * is that users will move and reshape the polygon over
+ * areas that they want their mower to avoid
+ */
+function addPolyObstacle(): void
 {
     var polyCoords = [
         {lat: map.getCenter().lat() + .00002, lng: map.getCenter().lng() - .00002},
@@ -639,10 +696,12 @@ function addPolyObstacle()
     polyObstacles.add(polyObstacle);
 }
 
-//Add a generic circle-shaped area to the center of the map -- the idea
-//is that users will move and reshape the circle over
-//areas that they want their mower to avoid
-function addCircleObstacle()
+/**
+ * Add a generic circle-shaped area to the center of the map -- the idea
+ * is that users will move and reshape the circle over
+ * areas that they want their mower to avoid
+ */
+function addCircleObstacle(): void
 {
     var circleObstacle = new google.maps.Circle({
         strokeColor: '#FF0000',
@@ -669,7 +728,9 @@ function addCircleObstacle()
     circleObstacles.add(circleObstacle);
 }
 
-//Add drawing tools (i.e. that user will use to draw mission) to map
+/**
+ * Add drawing tools (i.e. that user will use to draw mission) to map
+ */
 function addDrawingToolsToMap(): void
 {
     // Creates a drawing manager attached to the map that allows the user to draw
@@ -708,7 +769,7 @@ function addDrawingToolsToMap(): void
     google.maps.event.addDomListener(<HTMLButtonElement> $('addCircleObstacleBtn'), 'click', addCircleObstacle);
     google.maps.event.addDomListener(<HTMLButtonElement> $('addPolyObstacleBtn'), 'click', addPolyObstacle);
 
-    buildColorPalette();
+    selectColor(colors[0]);
 
     google.maps.event.addListener(drawingManager, 'polygoncomplete', function (polygon)
     {
@@ -735,7 +796,7 @@ function addDrawingToolsToMap(): void
         // Iterate over the polygonBounds vertices.
         polygonBounds.forEach(function (xy, i)
         {
-            missionPolygonLatLng.push({ lat: xy.lat(), lng: xy.lng() });
+            missionPolygonLatLng.push(new LL( xy.lat(), xy.lng()));
         });
 
         var latLngBoundsString = JSON.stringify(missionPolygonLatLng);
@@ -785,12 +846,21 @@ function addDrawingToolsToMap(): void
 
 } //End function addDrawingToolsToMap
 
-//Approximate circle as polygon
-//Returns [{lat: , lng:}, {lat: , lng}, ...]
-//Credit: https://stackoverflow.com/questions/24733481/how-to-draw-a-circle-using-polygon-in-googlemaps
-function approximateCircleAsPolygon(center: google.maps.LatLng, radius: number, points: number): Array<LL>
+/**
+ * Approximate circle as polygon
+ * 
+ * Returns a series of polygon points of type Array<ILL> that represent the
+ * approximation of the circle as a polyon
+ * 
+ * Credit: https://stackoverflow.com/questions/24733481/how-to-draw-a-circle-using-polygon-in-googlemaps
+ * 
+ * @param center Latitude/Longitude of circle' center
+ * @param radius Radius in meters
+ * @param points Number of polygon vertices to use to reflect the circle as a polygon
+ */
+function approximateCircleAsPolygon(center: google.maps.LatLng, radius: number, points: number): Array<ILL>
 {
-    let llArray: Array<LL> = [];
+    let llArray: Array<ILL> = [];
     let p: number = 360/points;
     let d: number = 0;
 
@@ -802,7 +872,9 @@ function approximateCircleAsPolygon(center: google.maps.LatLng, radius: number, 
     return llArray;
 }
 
-//Maps save location logic credit: https://www.daftlogic.com/sandbox-google-maps-remember-last-location.htm
+/**
+ * Map save location logic credit: https://www.daftlogic.com/sandbox-google-maps-remember-last-location.htm
+ */
 function saveMapLocationToCookie(): void
 {
     let mapzoom = map.getZoom();
@@ -817,6 +889,10 @@ function saveMapLocationToCookie(): void
     setCookie("GoogleMapsLocation", cookiestring, exp);
 }
 
+/**
+ * If user previously zoomed in on a location let's give them that location when they come
+ * back (i.e. instead of some random high-level location like the Statue of Liberty)
+ */
 function loadMapLocationFromCookie(): void
 {
     let loadedstring: string = getCookie("GoogleMapsLocation");
@@ -850,11 +926,23 @@ function loadMapLocationFromCookie(): void
     }
 }
 
+/**
+ * Helper function for setting cookies
+ * 
+ * @param name Cookie name
+ * @param value Cookie value
+ * @param expires Cookie expiration date
+ */
 function setCookie(name: string, value: string, expires: Date): void
 {
     document.cookie = name + "=" + escape(value) + "; path=/" + ((expires == null) ? "" : "; expires=" + expires.toUTCString());
 }
 
+/**
+ * Helper function for reading cookies
+ * 
+ * @param name Cookie name
+ */
 function getCookie(name: string): string
 {
     if (document.cookie.length > 0)
@@ -871,7 +959,16 @@ function getCookie(name: string): string
     return "";
 }
 
-// Adds a marker to the map.
+/**
+ * Adds a marker to the map that represents that starting
+ * location of the mission -- user can drag the marker
+ * around to decide where they want the mission
+ * to start -- also note we draw a dashed
+ * line starting at this marker to
+ * show the mission heading
+ * 
+ * @param heading Heading at which to draw heading line
+ */
 function addStartingLocationMarker(heading: number): void
 {
     startMarker = new google.maps.Marker({
@@ -882,7 +979,7 @@ function addStartingLocationMarker(heading: number): void
         map: map
     });
 
-    var bearingEndPointLatLong: LL = bearingLineEndpointCoords(map.getCenter().lat(), map.getCenter().lng(), heading);
+    var bearingEndPointLatLong: ILL = bearingLineEndpointCoords(map.getCenter().lat(), map.getCenter().lng(), heading);
 
     var bearingLineCoordinates = [
         {lat: map.getCenter().lat(), lng: map.getCenter().lng()},
@@ -912,8 +1009,15 @@ function addStartingLocationMarker(heading: number): void
     startMarkerMovedRedrawHeadingListener();
 }
 
-//Draw the bearing line on the map -- the "bearing" we're talking about
-//here is the heading of the up-and-down (or side-to-side) mission
+/**
+ * Draw the dashed bearing indicator line on the map -- the "bearing" we're 
+ * talking about here is the heading of the up-and-down 
+ * (or side-to-side) mission
+ * 
+ * @param latStart Latitude of mission starting point marker
+ * @param lngStart Longitude of mission starting point marker
+ * @param heading Heading of line we'll draw
+ */
 function drawBearingLine(latStart: number, lngStart: number, heading: number): void
 {
     var bearingEndPointLatLong: LL = bearingLineEndpointCoords(latStart, lngStart, heading);
@@ -924,8 +1028,10 @@ function drawBearingLine(latStart: number, lngStart: number, heading: number): v
     bearingLine.setPath(bearingLineCoordinates);
 }
 
-//When user drags the startMarker around, update the bearing line
-//to "attach" to the startMarker
+/**
+ * When user drags the startMarker around, update the bearing line
+ * to "attach" to the startMarker
+ */
 function startMarkerMovedRedrawHeadingListener(): void
 {
     google.maps.event.addListener(startMarker, 'dragend', function(evt){
