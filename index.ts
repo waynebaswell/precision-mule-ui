@@ -812,8 +812,13 @@ function addDrawingToolsToMap(): void
             });
             polyArray.push(polyObstacleBoundsArray);
         });
+        
+        //For now we're approximating the circles as polygons, so let's comment
+        //out the send-circles-to-server logic (but not yet remove it
+        //as I may eventually go back to sending up the "true" 
+        //circle representation to the server)
 
-        var circleArray : Array<ILL> = [];
+        //var circleArray : Array<ILL> = [];
         circleObstacles.forEach(function (circle, i)
         {
             //Begin treating these guys as true circles
@@ -829,11 +834,15 @@ function addDrawingToolsToMap(): void
             var circleAsLagLngArray: Array<ILL> = approximateCircleAsPolygon(circle.getCenter(), circle.getRadius(), 18);
             polyArray.push(circleAsLagLngArray);
         });
+        
+        let startLat = startMarker.getPosition()!.lat();
+        let startLng = startMarker.getPosition()!.lng();
 
         var truckLoadOfDataForServer: Record<string, any> = {
             'missionPolygon': missionPolygonLatLng,
-            'circleObstacles': circleArray,
+            //'circleObstacles': circleArray,
             'polyObstacles': polyArray,
+            'startMarker': {lat: startLat, lng: startLng},
             'mowingPathWidthInMeters': (<HTMLInputElement> $('pathWidth')).value,
             'heading': (<HTMLInputElement> $('heading')).value
         };
