@@ -15,6 +15,7 @@ let polyOptions = {
 };
 let startMarker;
 let bearingLine;
+let missionPathPolylineMarkers = [];
 let circleObstacles = new Set(); //Google maps circle obstacle objects
 let polyObstacles = new Set(); //Google maps circle polygon objects
 const R = 6371000; //Earth radius in meters
@@ -420,7 +421,46 @@ function addMissionPolylineToMap(jsonData) {
         editable: true,
         icons: iconsequ
     });
+    google.maps.event.addListener(missionPathPolyline, "dragend", updateMissionPathPolylineMarkers);
+    google.maps.event.addListener(missionPathPolyline.getPath(), "insert_at", updateMissionPathPolylineMarkers);
+    google.maps.event.addListener(missionPathPolyline.getPath(), "remove_at", updateMissionPathPolylineMarkers);
+    google.maps.event.addListener(missionPathPolyline.getPath(), "set_at", updateMissionPathPolylineMarkers);
     missionPathPolyline.setMap(map);
+    updateMissionPathPolylineMarkers();
+}
+function updateMissionPathPolylineMarkers() {
+    var path = missionPathPolyline.getPath();
+    var len = path.getLength();
+    for (var x = 0; x < missionPathPolylineMarkers.length; x++) {
+        missionPathPolylineMarkers[x].setMap(null);
+    }
+    var checkbox = $('showWaypointNumbersCheckbox');
+    if (checkbox.checked == true) {
+        for (var i = 0; i < len; i++) {
+            var marker = new google.maps.Marker({
+                position: path.getAt(i),
+                label: (i + 1).toString(),
+                draggable: true,
+                map: map
+            });
+            missionPathPolylineMarkers.push(marker);
+            bindMarkerToMissionPathPolyline(marker, i);
+        }
+    }
+}
+/**
+ * When user moves mission vertex marker, update the corresponding lat/lng
+ * vertex on the mission polyline accordingly
+ *
+ * @param marker The marker to bind to
+ * @param index Polyline index to replace lat/lng value of
+ */
+function bindMarkerToMissionPathPolyline(marker, index) {
+    google.maps.event.addListener(marker, 'dragend', function () {
+        var newMarkerLatLng = marker.getPosition();
+        var path = missionPathPolyline.getPath();
+        path.setAt(index, new google.maps.LatLng(newMarkerLatLng.lat(), newMarkerLatLng.lng()));
+    });
 }
 /**
  * Build a big ArduPilot mission waypoint string that the user will be able to

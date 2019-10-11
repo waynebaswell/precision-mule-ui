@@ -25,14 +25,14 @@ body
     margin-top: 5px;
 }
 
-#controls button, input
+#controls button, input[type="text"]
 {
     margin-top:3px;
     margin-bottom:3px;
     width: 100%;
 }
 
-#controls input 
+#controls input[type="text"]
 {
     width: 194px;
 }

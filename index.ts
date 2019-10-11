@@ -20,6 +20,8 @@ let polyOptions: any = {
 let startMarker: google.maps.Marker;
 let bearingLine: google.maps.Polyline;
 
+let missionPathPolylineMarkers:Array<google.maps.Marker> = [];
+
 let circleObstacles: Set<google.maps.Circle> = new Set(); //Google maps circle obstacle objects
 let polyObstacles: Set<google.maps.Polygon> = new Set(); //Google maps circle polygon objects
 
@@ -540,7 +542,57 @@ function addMissionPolylineToMap(jsonData: Array<ILL>): void
         editable: true,
         icons: iconsequ
     });
+
+    google.maps.event.addListener(missionPathPolyline, "dragend", updateMissionPathPolylineMarkers);
+    google.maps.event.addListener(missionPathPolyline.getPath(), "insert_at", updateMissionPathPolylineMarkers);
+    google.maps.event.addListener(missionPathPolyline.getPath(), "remove_at", updateMissionPathPolylineMarkers);
+    google.maps.event.addListener(missionPathPolyline.getPath(), "set_at", updateMissionPathPolylineMarkers);
+
     missionPathPolyline.setMap(map);
+    updateMissionPathPolylineMarkers();
+}
+
+function updateMissionPathPolylineMarkers()
+{
+    var path = missionPathPolyline.getPath();
+    var len = path.getLength();
+    
+    for (var x = 0; x < missionPathPolylineMarkers.length; x++)
+    {
+        missionPathPolylineMarkers[x].setMap(null);
+    }
+
+    var checkbox = <HTMLInputElement> $('showWaypointNumbersCheckbox');
+    if (checkbox.checked == true)
+    {
+        for (var i=0; i<len; i++) 
+        {
+            var marker = new google.maps.Marker({
+                position: path.getAt(i),
+                label: (i+1).toString(),
+                draggable: true,
+                map: map
+                });
+            missionPathPolylineMarkers.push(marker);
+            bindMarkerToMissionPathPolyline(marker, i);
+        }   
+    }
+}
+
+/**
+ * When user moves mission vertex marker, update the corresponding lat/lng
+ * vertex on the mission polyline accordingly
+ * 
+ * @param marker The marker to bind to
+ * @param index Polyline index to replace lat/lng value of
+ */
+function bindMarkerToMissionPathPolyline(marker: google.maps.Marker, index: number) 
+{    
+    google.maps.event.addListener(marker, 'dragend', function() {
+        var newMarkerLatLng = marker.getPosition();
+        var path = missionPathPolyline.getPath();
+        path.setAt(index, new google.maps.LatLng(newMarkerLatLng.lat(), newMarkerLatLng.lng()));
+    });
 }
 
 /**
