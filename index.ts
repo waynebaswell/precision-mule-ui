@@ -154,6 +154,7 @@ function headingOnInput(val: any): void
 {
     if (!isNaN(val))
     {
+        setCookie("heading", `${val}`);
         if(startMarker != null && startMarker.getPosition() != null)
         { 
             let nonNullPosition = startMarker.getPosition()!;
@@ -167,6 +168,26 @@ function headingOnInput(val: any): void
     else
     {
         console.log(`the heading specified (${val}) is not a number -- cannot draw a new heading line`);
+    }
+}
+
+
+
+/**
+ * Call this guy when path width text input changes -- saves path width
+ * 
+ * @param val Heading value user enters in the heading input box
+ */
+function pathWidthOnInput(val: any): void
+{
+    if (!isNaN(val))
+    {
+        setCookie("pathWidth", `${val}`);
+        console.log("saved path width to cookie");
+    }
+    else
+    {
+        console.log(`the path width specified (${val}) is not a number`);
     }
 }
 
@@ -239,6 +260,18 @@ function initMap(): void
     let headingNumber = parseFloat((<HTMLInputElement> $('heading')).value);
     addStartingLocationMarker(headingNumber);
     setupFileListener();
+
+    let pathWidthCookieValue = getCookie("pathWidth");
+    if(pathWidthCookieValue)
+    {
+        (<HTMLInputElement>$('pathWidth')).value = pathWidthCookieValue;
+    }
+
+    let headingCookieValue = getCookie("heading");
+    if(headingCookieValue)
+    {
+        (<HTMLInputElement>$('heading')).value = headingCookieValue;
+    }
 }
 
 /**
@@ -994,8 +1027,14 @@ function loadMapLocationFromCookie(): void
  * @param value Cookie value
  * @param expires Cookie expiration date
  */
-function setCookie(name: string, value: string, expires: Date): void
+function setCookie(name: string, value: string, expires?: Date): void
 {
+    if (expires == null)
+    {
+        expires = new Date();     //set new date object
+        expires.setTime(expires.getTime() + (1000 * 60 * 60 * 24 * 30));     //set it 30 days ahead
+    }
+
     document.cookie = name + "=" + escape(value) + "; path=/" + ((expires == null) ? "" : "; expires=" + expires.toUTCString());
 }
 

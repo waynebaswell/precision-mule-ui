@@ -20,7 +20,7 @@
         <div id="controls">
             <img src="./img/logo-green.png" alt="Precision Mule" width="191px">
             <div class="sub-controls input">
-            Mission Path Width (in Meters):<input type="text" name="pathWidth" id="pathWidth" value="0.5" required>
+            Mission Path Width (in Meters):<input type="text" name="pathWidth" id="pathWidth" value="0.5" oninput="pathWidthOnInput(this.value)" required>
             Mission Heading (in Degrees):<input type="text" name="heading" id="heading" value="0" oninput="headingOnInput(this.value)" required>
             </div>
             <div class="sub-controls actions">
