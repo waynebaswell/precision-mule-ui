@@ -226,8 +226,8 @@ function setupFileListener(): void
         {
             // Entire file
             console.log(this.result);
-            var missionPolygonlls = JSON.parse(this.result);
-            loadPolygonfromllJSON(missionPolygonlls);
+            var userEnteredMapData = JSON.parse(this.result);
+            loadPolygonFromUserMapDataRecord(userEnteredMapData);
         };
         reader.readAsText(file);
     };
@@ -405,16 +405,8 @@ function deleteSelectedShape(): void
  */
 function savePolygon(): void
 {
-    var lls: Array<ILL>  = [];
-
-    var polygonBounds = missionPolygon.getPath();
-    // Iterate over the polygonBounds vertices.
-    polygonBounds.forEach(function (xy, i)
-    {
-        lls.push(new LL( xy.lat(), xy.lng() ));
-    })
-
-    localStorage.setObject('missionPolygonlls', lls);
+    var userEnteredMapData = mapUserEnteredMapDataAsBigHonkinHash(false);
+    localStorage.setObject('userEnteredMapData', userEnteredMapData);
 }
 
 /**
@@ -422,19 +414,11 @@ function savePolygon(): void
  */
 function downloadPolygon(): void
 {
-    var lls: Array<ILL>  = [];
-    
     if(missionPolygon)
     {
-        var polygonBounds = missionPolygon.getPath();
-        // Iterate over the polygonBounds vertices.
-        polygonBounds.forEach(function (xy, i)
-        {
-            lls.push(new LL(xy.lat(), xy.lng()));
-        })
-        var llsAsJSONString = JSON.stringify(lls);
-
-        download("polygon.json", llsAsJSONString);
+        var userEnteredMapData: Record<string, any> = mapUserEnteredMapDataAsBigHonkinHash(false);
+        var userEnteredMapDataAsString = JSON.stringify(userEnteredMapData);
+        download("polygon.json", userEnteredMapDataAsString);
     }
 }
 
@@ -443,19 +427,49 @@ function downloadPolygon(): void
  */
 function loadSavedPolygon(): void
 {
-    let missionPolygonlls: Array<ILL> = localStorage.getObject('missionPolygonlls');
-    loadPolygonfromllJSON(missionPolygonlls);
+    let userEnteredMapData = localStorage.getObject('userEnteredMapData');
+    loadPolygonFromUserMapDataRecord(userEnteredMapData);
 }
 
 /**
- * Load mission polygon into visible google map from given Array<ILL>
- * 
- * @param missionPolygonlls Array<ILL> of coordinates representing the 
- * main mission polygon
+ * Clears out the map data 
  */
-function loadPolygonfromllJSON(missionPolygonlls: Array<ILL>): void
+function clearUserMapData(): void
 {
-    deleteSelectedShape();
+    circleObstacles.forEach(function (circle, i)
+    {    
+        circle.setMap(null);
+    });
+
+    polyObstacles.forEach(function (poly, i)
+    {
+        poly.setMap(null);
+    });
+
+    if(missionPolygon)
+    {
+        missionPolygon.setMap(null);
+    }
+
+    if(missionPathPolyline)
+    {
+        missionPathPolyline.setMap(null);
+    }
+}
+
+/**
+ * Load mission data into visible google map
+ * 
+ * @param userEnteredMapData Record<string, any> of coordinates representing the 
+ * main mission polygon, coordinates of the obstacles and marker,
+ * and the path width and heading information
+ */
+function loadPolygonFromUserMapDataRecord(userEnteredMapData: Record<string, any>): void
+{
+    clearUserMapData();
+
+    let missionPolygonlls: Array<ILL> = userEnteredMapData['missionPolygon'];
+
     var pathMVCArray =  new google.maps.MVCArray<google.maps.LatLng>();
     if(missionPolygonlls)
     {
@@ -491,6 +505,36 @@ function loadPolygonfromllJSON(missionPolygonlls: Array<ILL>): void
                 setSelection(missionPolygon);
         });
     }
+    let smLL:ILL = userEnteredMapData['startMarker'];
+    startMarker.setPosition(new google.maps.LatLng(smLL.lat, smLL.lng));
+
+    let headingVal = userEnteredMapData['heading'];
+    let mowingPathWidthInMetersVal = userEnteredMapData['mowingPathWidthInMeters'];
+
+    (<HTMLInputElement>$('heading')).value = headingVal;
+    (<HTMLInputElement>$('pathWidth')).value = mowingPathWidthInMetersVal;
+    
+
+    headingOnInput(headingVal);
+
+    let circleArray : Array<Record<string, any>> = userEnteredMapData['circleObstacles'];
+    let polyArray: Array<Array<ILL>> = userEnteredMapData['polyObstacles'];
+
+    circleObstacles = new Set();
+    polyObstacles = new Set();
+
+    circleArray.forEach(function (circle, i)
+    {
+        let radius:number = circle['radius'];
+        let lat:number = circle['lat'];
+        let lng:number = circle['lng'];
+        addCircleObstacleOptions(radius, lat, lng);
+    });
+
+    polyArray.forEach(function (poly, i)
+    {
+        addPolyObstacleOptions(poly);
+    });
 }
 
 /**
@@ -622,7 +666,7 @@ function updateMissionPathPolylineMarkers()
 function bindMarkerToMissionPathPolyline(marker: google.maps.Marker, index: number) 
 {    
     google.maps.event.addListener(marker, 'dragend', function() {
-        var newMarkerLatLng = marker.getPosition();
+        var newMarkerLatLng = marker.getPosition()!;
         var path = missionPathPolyline.getPath();
         path.setAt(index, new google.maps.LatLng(newMarkerLatLng.lat(), newMarkerLatLng.lng()));
     });
@@ -755,10 +799,19 @@ function addPolyObstacle(): void
         {lat: map.getCenter().lat() - .00002, lng: map.getCenter().lng() + .00002},
         {lat: map.getCenter().lat() - .00002, lng: map.getCenter().lng() - .00002}
     ];
+
+    //add obstacle to visible center of map
+    var polyObstacle = addPolyObstacleOptions(polyCoords);
+
+    setSelection(polyObstacle);
+}
+
+function addPolyObstacleOptions(vertices: Array<ILL>): google.maps.Polygon
+{
     //add obstacle to visible center of map
     var polyObstacle = new google.maps.Polygon({
         map: map,
-        paths: polyCoords,
+        paths: vertices,
         strokeColor: '#FF0000',
         strokeOpacity: 0.8,
         strokeWeight: 2,
@@ -776,9 +829,8 @@ function addPolyObstacle(): void
             setSelection(polyObstacle);
         });
     
-    setSelection(polyObstacle);
-
     polyObstacles.add(polyObstacle);
+    return polyObstacle;
 }
 
 /**
@@ -788,6 +840,12 @@ function addPolyObstacle(): void
  */
 function addCircleObstacle(): void
 {
+    let circleObstacle = addCircleObstacleOptions(2, map.getCenter().lat(), map.getCenter().lng());
+    setSelection(circleObstacle);
+}
+
+function addCircleObstacleOptions(radius: number, lat: number, lng: number): google.maps.Circle
+{
     var circleObstacle = new google.maps.Circle({
         strokeColor: '#FF0000',
         strokeOpacity: 0.8,
@@ -795,8 +853,8 @@ function addCircleObstacle(): void
         fillColor: '#FF0000',
         fillOpacity: 0.35,
         map: map,
-        center: map.getCenter(),
-        radius: 2,
+        center: new google.maps.LatLng(lat, lng),
+        radius: radius,
         draggable: true,
         editable: true,
         zIndex: 100
@@ -807,10 +865,9 @@ function addCircleObstacle(): void
         {
             setSelection(circleObstacle);
         });
-    
-    setSelection(circleObstacle);
 
     circleObstacles.add(circleObstacle);
+    return circleObstacle;
 }
 
 /**
@@ -875,70 +932,90 @@ function addDrawingToolsToMap(): void
 
     google.maps.event.addDomListener(<HTMLButtonElement> $('buildMissionBtn'), 'click', function ()
     {
-        let missionPolygonLatLng: Array<ILL>  = [];
-
-        var polygonBounds = missionPolygon.getPath();
-        // Iterate over the polygonBounds vertices.
-        polygonBounds.forEach(function (xy, i)
-        {
-            missionPolygonLatLng.push(new LL( xy.lat(), xy.lng()));
-        });
-
-        var latLngBoundsString = JSON.stringify(missionPolygonLatLng);
-        console.log(latLngBoundsString);
-
-        var polyArray: Array<Array<ILL>> = [];
-        polyObstacles.forEach(function (poly, i)
-        {
-            var polyObstacleBoundsArray: Array<ILL> = [];
-            poly.getPath().forEach(function (xy, i)
-            {
-                polyObstacleBoundsArray.push(new LL(xy.lat(), xy.lng())); 
-            });
-            polyArray.push(polyObstacleBoundsArray);
-        });
-        
-        //For now we're approximating the circles as polygons, so let's comment
-        //out the send-circles-to-server logic (but not yet remove it
-        //as I may eventually go back to sending up the "true" 
-        //circle representation to the server)
-
-        //var circleArray : Array<ILL> = [];
-        circleObstacles.forEach(function (circle, i)
-        {
-            //Begin treating these guys as true circles
-            // var circleObstacleMap = new Map();
-            // var center = circle.getCenter();
-            // var radius = circle.getRadius();
-            // circleObstacleMap['radius'] = radius;
-            // circleObstacleMap['lat'] = center.lat();
-            // circleObstacleMap['lng'] = center.lng();
-            // circleArray.push(circleObstacleMap);
-            //End treating as true circles
-
-            var circleAsLagLngArray: Array<ILL> = approximateCircleAsPolygon(circle.getCenter(), circle.getRadius(), 18);
-            polyArray.push(circleAsLagLngArray);
-        });
-        
-        let startLat = startMarker.getPosition()!.lat();
-        let startLng = startMarker.getPosition()!.lng();
-
-        var truckLoadOfDataForServer: Record<string, any> = {
-            'missionPolygon': missionPolygonLatLng,
-            //'circleObstacles': circleArray,
-            'polyObstacles': polyArray,
-            'startMarker': {lat: startLat, lng: startLng},
-            'mowingPathWidthInMeters': (<HTMLInputElement> $('pathWidth')).value,
-            'heading': (<HTMLInputElement> $('heading')).value
-        };
-
+        var truckLoadOfDataForServer: Record<string, any> = mapUserEnteredMapDataAsBigHonkinHash(true);
         let pathWidthStr: string = (<HTMLInputElement> $('pathWidth')).value;
+
         //Now we want to send this data up to the server
         postData(JSON.stringify(truckLoadOfDataForServer), pathWidthStr);
         saveMapLocationToCookie();
     });
 
 } //End function addDrawingToolsToMap
+
+/**
+ * Constructs an object holding all the user-entered map data
+ * 
+ * @param saveCirclesAsPolygons Do you want this method to appoximate the circles
+ * as polygons and throw them in with the other polygons? Presently we do
+ * this for sending the data to the server but for saving the client
+ * data locally we retain the original circle dimensions.
+ */
+function mapUserEnteredMapDataAsBigHonkinHash(saveCirclesAsPolygons: boolean): Record<string, any>
+{
+    let missionPolygonLatLng: Array<ILL>  = [];
+
+    var polygonBounds = missionPolygon.getPath();
+    // Iterate over the polygonBounds vertices.
+    polygonBounds.forEach(function (xy, i)
+    {
+        missionPolygonLatLng.push(new LL( xy.lat(), xy.lng()));
+    });
+
+    var latLngBoundsString = JSON.stringify(missionPolygonLatLng);
+    console.log(latLngBoundsString);
+
+    var polyArray: Array<Array<ILL>> = [];
+    polyObstacles.forEach(function (poly, i)
+    {
+        var polyObstacleBoundsArray: Array<ILL> = [];
+        poly.getPath().forEach(function (xy, i)
+        {
+            polyObstacleBoundsArray.push(new LL(xy.lat(), xy.lng())); 
+        });
+        polyArray.push(polyObstacleBoundsArray);
+    });
+    
+    let startLat = startMarker.getPosition()!.lat();
+    let startLng = startMarker.getPosition()!.lng();
+
+    var bigHonkinUserMapDataHash: Record<string, any> = {
+        'missionPolygon': missionPolygonLatLng,
+        'startMarker': new LL(startLat, startLng),
+        'mowingPathWidthInMeters': (<HTMLInputElement> $('pathWidth')).value,
+        'heading': (<HTMLInputElement> $('heading')).value
+    };
+
+    if(saveCirclesAsPolygons)
+    {
+        circleObstacles.forEach(function (circle, i)
+        {    
+            var circleAsLagLngArray: Array<ILL> = approximateCircleAsPolygon(circle.getCenter(), circle.getRadius(), 18);
+            polyArray.push(circleAsLagLngArray);
+        });
+    }
+    else
+    {
+        var circleArray : Array<Record<string, any>> = [];
+
+        circleObstacles.forEach(function (circle, i)
+        {
+            var center = circle.getCenter();
+            var radius = circle.getRadius();
+            var circleObstacleMap: Record<string, any> = {
+                'radius': radius,
+                'lat': center.lat(),
+                'lng': center.lng()
+            };
+
+            circleArray.push(circleObstacleMap);
+        });
+
+        bigHonkinUserMapDataHash['circleObstacles'] = circleArray;
+    }
+    bigHonkinUserMapDataHash['polyObstacles'] = polyArray;
+
+    return bigHonkinUserMapDataHash;
+}
 
 /**
  * Approximate circle as polygon
