@@ -28,8 +28,8 @@ let polyObstacles: Set<google.maps.Polygon> = new Set(); //Google maps circle po
 const R: number = 6371000; //Earth radius in meters
 const d: number = 1000; //Heading line distance in meters
 
-//var baseURL = "http://precisionmule.com";
-const baseURL: string = "http://localhost:8080";
+const baseURL: string = "https://precisionmule.com";
+//const baseURL: string = "http://localhost:8080";
 
 //Credit: https://blog.thecell.eu/blog/2017/11/12/customlines-for-google-maps-polylines/
 //https://developers.google.com/maps/documentation/javascript/reference?#IconSequence
