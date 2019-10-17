@@ -1,5 +1,5 @@
 # Precision Mule Web UI
-Web UI source for http://precisionmule.com
+Web UI source for https://precisionmule.com
 
 To compile JavaScript from TypeScript:
 
